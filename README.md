@@ -2,6 +2,8 @@
 
 Predict which insurance customers are likely to **churn** (cancel or not renew their policy), so the company can step in early with retention offers.
 
+> **Result:** Random Forest picked over Logistic Regression and Decision Tree with the best F1 (0.466) and precision (0.473) on a 12% churn rate. Found and removed a leaking column (`acct_suspd_date`) that would have given a fake perfect score.
+
 ![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python&logoColor=white)
 ![pandas](https://img.shields.io/badge/pandas-Data-150458?logo=pandas&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white)
@@ -212,8 +214,9 @@ flowchart LR
 ## 🗂️ Repository Structure
 
 ```
-├── Insurance_Churn_Prediction.ipynb   # Full notebook: data understanding → EDA → models → prediction
-└── README.md                          # Project overview (this file)
+├── Insurance_Churn_Prediction_clean.ipynb   # Full notebook: data understanding → EDA → models → prediction
+├── requirements.txt
+└── README.md
 ```
 
 > The dataset is not included in this repo. Download `autoinsurance_churn.csv` from the Kaggle link above.
@@ -228,10 +231,10 @@ flowchart LR
    ```
 2. Install the libraries
    ```bash
-   pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+   pip install -r requirements.txt
    ```
 3. Download `autoinsurance_churn.csv` from Kaggle and put it next to the notebook
-4. Open `Insurance_Churn_Prediction.ipynb` in Jupyter or Google Colab and run all cells
+4. Open `Insurance_Churn_Prediction_clean.ipynb` in Jupyter or Google Colab and run all cells
 
 ---
 
