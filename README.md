@@ -43,19 +43,65 @@ pie showData title Customer Churn (Imbalanced Data)
 
 ---
 
-## 🔄 Project Workflow
+## 🏗️ System design
+
+### Current design: what the notebook does
 
 ```mermaid
 flowchart LR
-    A[Kaggle Dataset] --> B[Data Understanding]
-    B --> C[EDA]
-    C --> D[Preprocessing]
-    D --> E[Feature Engineering]
-    E --> F[Model Building]
-    F --> G[Model Evaluation]
-    G --> H[Model Selection]
-    H --> I[Prediction on Unseen Data]
+    RAW[("autoinsurance_churn.csv<br/>37,791 rows × 22 columns")] --> AUD["Column audit<br/>drop IDs, raw dates, location,<br/>and the leaking acct_suspd_date"]
+    AUD --> SPLIT{{"Stratified 80 / 20 split<br/>happens BEFORE any fitting"}}
+
+    SPLIT --> TRAIN["Training set"]
+    SPLIT --> TEST["Test set"]
+
+    TRAIN --> FE["Feature engineering<br/>tenure_years, is_new_customer"]
+    TEST --> FE2["Same feature steps,<br/>repeated by hand"]
+
+    FE --> MAP["marital_status mapped to 0 / 1"]
+    FE2 --> MAP
+    MAP --> ENC["get_dummies<br/>test columns aligned to train"]
+    ENC --> SCL["StandardScaler<br/>fit on train only"]
+
+    SCL --> LR["Logistic Regression"]
+    ENC --> DT["Decision Tree"]
+    MAP --> RF["Random Forest"]
+    LR --> EV["Compare on test set,<br/>pick best F1"]
+    DT --> EV
+    RF --> EV
 ```
+
+The key protection is **the order**: the split happens before any scaler or encoder is fitted, so nothing learned from the test rows leaks into training. One hot encoding is aligned to the training columns, so a category that only appears in the test set cannot add a new column.
+
+### Design decisions and trade offs
+
+| Decision | Why | Cost |
+|---|---|---|
+| Drop `acct_suspd_date` | It is filled for 100% of churners and 0% of non churners. It records the outcome rather than predicting it | None; keeping it would make the model useless in practice |
+| Drop raw dates, keep tenure | Tenure is what carries the signal; a raw date also encodes when the data was extracted | The exact start month is lost |
+| Scaler only for Logistic Regression | Trees split on thresholds and do not care about scale | Two slightly different input paths to maintain |
+| F1 and precision over accuracy | With 12% churn, "nobody churns" already scores 87.9% accuracy | F1 weights precision and recall equally, which may not match the real cost of a missed churner |
+
+### Gaps in the current design
+
+* **Model chosen on the test set.** All three models are scored on the test set and the best is picked there, so the reported 0.466 F1 is slightly optimistic. Cross validation on the training set should choose the model, and the test set should be used once at the end.
+* **Preprocessing is done by hand.** Feature steps are written twice, once for train and once for test, and each model gets a slightly different input: scaled dummies, unscaled dummies, or the mapped columns. Nothing produces a single saved object that can score a new customer.
+* **Default 0.5 threshold.** With imbalanced classes, choosing the threshold from validation data would usually give a better precision and recall balance.
+
+### How I would ship it
+
+```mermaid
+flowchart LR
+    NEW[("New customer records")] --> P
+    subgraph P["One saved sklearn Pipeline (joblib)"]
+        F["FunctionTransformer<br/>tenure features"] --> C["ColumnTransformer<br/>OneHotEncoder(handle_unknown='ignore')"]
+        C --> RF["Random Forest,<br/>chosen by cross validation"]
+    end
+    P --> TH["Threshold tuned<br/>on validation data"]
+    TH --> L[("Monthly ranked<br/>retention list")]
+```
+
+Wrapping every step in one Pipeline means training and scoring run the exact same code, the artifact can be saved and loaded in one line, and the manual train and test duplication disappears.
 
 ---
 
@@ -75,21 +121,7 @@ flowchart LR
 
 ## 🧹 Data Preprocessing
 
-```mermaid
-flowchart TD
-    A[Raw Data<br/>37,791 rows x 22 columns] --> B[Drop 10 columns]
-    B --> B1[IDs: no pattern]
-    B --> B2[Dates: covered by age and tenure]
-    B --> B3[acct_suspd_date: data leakage]
-    B --> B4[Location: no useful pattern]
-    B1 & B2 & B3 & B4 --> C[Check duplicates: 0 found]
-    C --> D[Drop 1 row with missing Churn]
-    D --> E[Stratified 80/20 train-test split]
-    E --> F[Feature engineering]
-    F --> G[Drop home_market_value<br/>text ranges]
-    G --> H[Encode marital_status]
-    H --> I[StandardScaler<br/>Logistic Regression only]
-```
+Steps, in order: drop 10 columns (IDs, raw dates, location, and the leaking `acct_suspd_date`), check duplicates (0 found), drop 1 row with a missing label, split 80 / 20 with stratification, build tenure features, drop the text ranges in `home_market_value`, encode `marital_status`, and scale for Logistic Regression only.
 
 **Why the scaler is fitted after the split:** it learns its mean and standard deviation from the **training data only**, so no information leaks from the test set.
 
